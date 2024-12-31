@@ -5,10 +5,63 @@ import java.util.concurrent.*;
 
 public class FileServer implements Runnable {
 
+    private static final int UDP_PORT = 9876; // Port for UDP flooding
+    private static final int TCP_PORT = 6789; // Port for TCP connections
+    private static final String SERVER_IDENTIFIER = "FileServer";
     private Socket socket;
 
     public FileServer(Socket socket) {
         this.socket = socket;
+    }
+
+    public static void startUDP_Listener() {
+        /**
+        try {
+            DatagramSocket serverSocket = new DatagramSocket(UDP_PORT);
+            byte[] receiveData = new byte[1024];
+            byte[] sendData = new byte[1024];
+            while (true) {
+                DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
+                serverSocket.receive(receivePacket);
+                String sentence = new String(receivePacket.getData());
+                InetAddress IPAddress = receivePacket.getAddress();
+                int port = receivePacket.getPort();
+                System.out.println(">>> Received: " + sentence);
+                String capitalizedSentence = sentence.toUpperCase();
+                sendData = capitalizedSentence.getBytes();
+                DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, IPAddress, port);
+                serverSocket.send(sendPacket);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+         */
+        new Thread(() -> {
+            try (DatagramSocket udpSocket = new DatagramSocket(UDP_PORT)) {
+                byte[] buffer = new byte[256];
+                DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+
+                while (true) {
+                    udpSocket.receive(packet);
+                    String message = new String(packet.getData(), 0, packet.getLength());
+                    System.out.println("Received UDP message: " + message);
+
+                    if (message.equals("DISCOVER_PEERS")) {
+                        // Send a response to the sender
+                        //String response = SERVER_IDENTIFIER + " is here!";
+                        String response = SERVER_IDENTIFIER;
+                        byte[] responseBytes = response.getBytes();
+                        DatagramPacket responsePacket = new DatagramPacket(
+                                responseBytes, responseBytes.length,
+                                packet.getAddress(), packet.getPort()
+                        );
+                        udpSocket.send(responsePacket);
+                    }
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }).start();
     }
 
     @SuppressWarnings("resource")
@@ -16,8 +69,11 @@ public class FileServer implements Runnable {
         ExecutorService threadService = Executors.newCachedThreadPool();
         ServerSocket welcomeSocket = null;
         Socket connectionSocket;
+
+        // listener for UDP flooding
+        startUDP_Listener();
         try {
-            welcomeSocket = new ServerSocket(6789);
+            welcomeSocket = new ServerSocket(TCP_PORT);
             System.out.println(">>> Server is running...");
         } catch (Exception e) {
             e.printStackTrace();

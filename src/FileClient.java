@@ -2,7 +2,12 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.RandomAccessFile;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.List;
 
 public class FileClient extends Thread {
 
@@ -15,22 +20,59 @@ public class FileClient extends Thread {
         this.PORT = PORT; //servers port
     }
 
-    public static void main(String[] args) {
-        try {
-            if (args.length != 3) {
-                System.out.println("USAGE: java -jar FileClient.jar <IP> <PORT> <number>\r\n\r\n"
-                        + "Where <IP> is a string, <PORT> is a number and <number> represents concurrent file downloads.");
-                //java -jar FileClient.jar 127.0.0.1 6789 3 -> 3 threads downloading the file from server
-            } else {
-                int a = Integer.parseInt(args[2]);
-                System.out.println("Creating " + a + " thread(s)...");
-                for (int i = 0; i < a; i++) {
-                    new FileClient(args[0], Integer.parseInt(args[1]), "fileToReceive" + (i + 1)).start();
+    public static List<String[]> udpFlood(String broadcastAddress, int udpPort) {
+        List<String[]> discoveredPeers = new ArrayList<>();
+        try (DatagramSocket udpSocket = new DatagramSocket()) {
+            udpSocket.setBroadcast(true);
+            String discoveryMessage = "DISCOVER_PEERS";
+            byte[] messageBytes = discoveryMessage.getBytes();
+
+            DatagramPacket packet = new DatagramPacket(
+                    messageBytes, messageBytes.length,
+                    InetAddress.getByName(broadcastAddress), udpPort
+            );
+
+            System.out.println("Sending discovery message...");
+            udpSocket.send(packet);
+
+            // Listen for responses
+            byte[] buffer = new byte[256];
+            DatagramPacket responsePacket = new DatagramPacket(buffer, buffer.length);
+
+            udpSocket.setSoTimeout(2000); // Timeout for responses
+            while (true) {
+                try {
+                    udpSocket.receive(responsePacket);
+                    String response = new String(responsePacket.getData(), 0, responsePacket.getLength());
+                    System.out.println("Discovered peer: " + response);
+                    discoveredPeers.add(new String[]{responsePacket.getAddress().getHostAddress(), "6789"}); // Default port assumed
+                } catch (Exception e) {
+                    System.out.println("UDP discovery timeout or error: " + e.getMessage());
+                    break;
                 }
             }
         } catch (Exception e) {
-            System.out.println("USAGE: java -jar FileClient.jar <IP> <PORT> <number>\r\n\r\n"
-                    + "Where <IP> is a string, <PORT> is a number and <number> represents concurrent file downloads.");
+            e.printStackTrace();
+        }
+        return discoveredPeers;
+    }
+    public static void main(String[] args) {
+        try {
+            String broadcastAddress = "255.255.255.255"; // Adjust for your network
+            List<String[]> peers = udpFlood(broadcastAddress, 9876); // Broadcast UDP discovery message
+
+            if (peers.isEmpty()) {
+                System.out.println("No peers discovered.");
+                return;
+            }
+
+            for (int i = 0; i < peers.size(); i++) {
+                String ip = peers.get(i)[0];
+                int port = Integer.parseInt(peers.get(i)[1]);
+                new FileClient(ip, port, "fileToReceive" + (i + 1)).start();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
