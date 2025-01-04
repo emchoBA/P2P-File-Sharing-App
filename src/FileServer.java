@@ -8,13 +8,41 @@ public class FileServer implements Runnable {
     private Socket socket;
     private static String rootFolder = "shared_files"; // Default shared folder
 
+    // =========================
+    // 1) Add these lines:
+    public static volatile boolean keepRunning = true;
+    private static ServerSocket welcomeSocket;        // so we can close later
+    private static DatagramSocket peerDatagramSocket; // so we can close later
+
+    public static void stopServer() {
+        keepRunning = false;
+        try {
+            if (welcomeSocket != null && !welcomeSocket.isClosed()) {
+                welcomeSocket.close();
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        try {
+            if (peerDatagramSocket != null && !peerDatagramSocket.isClosed()) {
+                peerDatagramSocket.close();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        System.out.println("FileServer.stopServer() called. Sockets closed.");
+    }
+    // =========================
+
     public FileServer(Socket socket) {
         this.socket = socket;
     }
 
     public static void main(String[] args) {
         ExecutorService threadService = Executors.newCachedThreadPool();
-        Thread peerListenerThread = new Thread(() -> startPeerListener(9000));
+
+        // 2) store that peerDatagramSocket so we can close it if needed
+        Thread peerListenerThread = new Thread(() -> peerDatagramSocket = startPeerListener(9000));
         peerListenerThread.start();
 
         // Ensure the shared folder exists
@@ -23,14 +51,22 @@ public class FileServer implements Runnable {
             sharedFolder.mkdirs();
         }
 
-        try (ServerSocket welcomeSocket = new ServerSocket(6789)) {
+        try {
+            // 3) store that welcomeSocket in static field
+            welcomeSocket = new ServerSocket(6789);
             System.out.println(">>> Server is running...");
-            while (true) {
+            while (keepRunning) {
                 Socket connectionSocket = welcomeSocket.accept();
                 threadService.execute(new FileServer(connectionSocket));
             }
+            System.out.println("Server loop ended (keepRunning = false).");
         } catch (Exception e) {
-            e.printStackTrace();
+            // If we closed the socket intentionally, we might see an exception
+            if (keepRunning) {
+                e.printStackTrace();
+            } else {
+                System.out.println("Server stopped by stopServer() call.");
+            }
         }
     }
 
@@ -43,17 +79,17 @@ public class FileServer implements Runnable {
             DataOutputStream dOS = new DataOutputStream(socket.getOutputStream());
             DataInputStream dIS = new DataInputStream(socket.getInputStream());
 
-            // Send the list of files in the shared folder
+            // Send the list of files
             if (files != null) {
                 dOS.writeInt(files.length);
                 for (File file : files) {
                     dOS.writeUTF(file.getName());
                 }
             } else {
-                dOS.writeInt(0); // No files available
+                dOS.writeInt(0);
             }
 
-            // Receive file request from client
+            // Receive the requested file
             String requestedFile = dIS.readUTF();
             File fileToSend = new File(rootFolder, requestedFile);
             if (fileToSend.exists() && fileToSend.isFile()) {
@@ -62,6 +98,7 @@ public class FileServer implements Runnable {
                 int chunkCount = (int) Math.ceil(length / 256000.0);
                 int[] checkArray = new int[chunkCount];
                 dOS.writeInt(length);
+
                 Random random = new Random();
                 int loop = 0;
 
@@ -83,9 +120,9 @@ public class FileServer implements Runnable {
                     }
                 }
                 rAF.close();
-                dOS.writeInt(-1); // Signal transfer complete
+                dOS.writeInt(-1); // transfer complete
             } else {
-                dOS.writeInt(-1); // File not found
+                dOS.writeInt(-1); // file not found
             }
             dOS.close();
         } catch (Exception e) {
@@ -93,11 +130,15 @@ public class FileServer implements Runnable {
         }
     }
 
-    private static void startPeerListener(int listenPort) {
-        try (DatagramSocket socket = new DatagramSocket(listenPort)) {
+    // 4) changed signature to return the socket
+    //    so we can store it in peerDatagramSocket
+    private static DatagramSocket startPeerListener(int listenPort) {
+        DatagramSocket socket = null;
+        try {
+            socket = new DatagramSocket(listenPort);
             System.out.println("PeerListener started. Listening on port " + listenPort + " ...");
 
-            while (true) {
+            while (keepRunning) {
                 byte[] buffer = new byte[1024];
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
                 socket.receive(packet);
@@ -116,7 +157,13 @@ public class FileServer implements Runnable {
                 }
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            if (keepRunning) {
+                e.printStackTrace();
+            } else {
+                System.out.println("PeerListener socket closed by stopServer().");
+            }
         }
+        return socket;  // store it if needed
     }
 }
+

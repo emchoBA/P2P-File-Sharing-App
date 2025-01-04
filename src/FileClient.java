@@ -6,105 +6,97 @@ import java.util.concurrent.*;
 public class FileClient {
 
     private static String destinationFolder = "downloads";
-    private static final String TARGET_FILE_NAME = "3b.png";  // Hard-coded file name
-    private static final int SERVER_PORT = 6789;              // The TCP port your FileServer listens on
-    private static final int BROADCAST_PORT = 9000;           // The UDP port for peer discovery
+    private static final int SERVER_PORT = 6789;
+    private static final int BROADCAST_PORT = 9000;
 
-    public static void main(String[] args) {
-        // 1) Discover all peers via UDP broadcast
-        List<String> peerIPs = startPeerDiscovery("192.168.1.255", BROADCAST_PORT);
+    // ===== NEW METHOD: search(...) instead of main
+    public static void search(String fileName) {
+        try {
+            List<String> peerIPs = startPeerDiscovery("192.168.1.255", BROADCAST_PORT);
+            if (peerIPs.isEmpty()) {
+                System.out.println("No peers discovered. Exiting search.");
+                return;
+            }
 
-        if (peerIPs.isEmpty()) {
-            System.out.println("No peers discovered. Exiting.");
-            return;
-        }
+            // Check which peers have the requested file
+            List<String> peersWithFile = new ArrayList<>();
+            int fileLength = -1;
 
-        // 2) Check which peers have the hard-coded file
-        List<String> peersWithFile = new ArrayList<>();
-        int fileLength = -1; // We'll store the file length from the first peer that has it
+            for (String peerIP : peerIPs) {
+                try (Socket socket = new Socket(peerIP, SERVER_PORT);
+                     DataInputStream dIS = new DataInputStream(socket.getInputStream());
+                     DataOutputStream dOS = new DataOutputStream(socket.getOutputStream())) {
 
-        for (String peerIP : peerIPs) {
-            try (Socket socket = new Socket(peerIP, SERVER_PORT);
-                 DataInputStream dIS = new DataInputStream(socket.getInputStream());
-                 DataOutputStream dOS = new DataOutputStream(socket.getOutputStream())) {
+                    int fileCount = dIS.readInt();
+                    for (int i = 0; i < fileCount; i++) {
+                        dIS.readUTF();
+                    }
 
-                // Server sends number of files
-                int fileCount = dIS.readInt();
-                // Skip reading all file names or read them if you want
-                for (int i = 0; i < fileCount; i++) {
-                    dIS.readUTF();
+                    // Ask for the user-specified file
+                    dOS.writeUTF(fileName);
+                    int lengthFromThisPeer = dIS.readInt();
+
+                    if (lengthFromThisPeer > 0) {
+                        peersWithFile.add(peerIP);
+                        // Save length if not already set
+                        if (fileLength < 0) {
+                            fileLength = lengthFromThisPeer;
+                        }
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            System.out.println("Number of peers that have \"" + fileName + "\": " + peersWithFile.size());
+            if (peersWithFile.isEmpty()) {
+                System.out.println("No peers have the file \"" + fileName + "\".");
+                return;
+            }
+
+            // Prepare the destination folder
+            File downloadFolderFile = new File(destinationFolder);
+            if (!downloadFolderFile.exists()) {
+                downloadFolderFile.mkdirs();
+            }
+
+            // Create output file
+            File outFile = new File(downloadFolderFile, fileName);
+            try (RandomAccessFile rAF = new RandomAccessFile(outFile, "rw")) {
+                rAF.setLength(fileLength);
+
+                int chunkSize = 256000;
+                int totalChunks = (int) Math.ceil(fileLength / (double) chunkSize);
+
+                MultiSourceDownloader msDownloader = new MultiSourceDownloader(fileName, rAF, totalChunks);
+
+                ExecutorService executor = Executors.newFixedThreadPool(peersWithFile.size());
+                List<Future<?>> futures = new ArrayList<>();
+
+                for (String peerIP : peersWithFile) {
+                    int finalFileLength = fileLength;
+                    futures.add(executor.submit(() ->
+                            downloadChunksFromPeer(peerIP, SERVER_PORT, msDownloader, finalFileLength)
+                    ));
                 }
 
-                // Ask for TARGET_FILE_NAME
-                dOS.writeUTF(TARGET_FILE_NAME);
-                int lengthFromThisPeer = dIS.readInt();
+                boolean allDone = false;
+                while (!allDone) {
+                    allDone = msDownloader.allChunksDownloaded() ||
+                            futures.stream().allMatch(Future::isDone);
 
-                if (lengthFromThisPeer > 0) {
-                    // This peer has the file
-                    peersWithFile.add(peerIP);
-
-                    // If we haven't saved the file length yet, do so now
-                    if (fileLength < 0) {
-                        fileLength = lengthFromThisPeer;
+                    if (!allDone) {
+                        Thread.sleep(500);
                     }
                 }
 
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
+                executor.shutdownNow();
 
-        System.out.println("Number of peers that have \"" + TARGET_FILE_NAME + "\": " + peersWithFile.size());
-        if (peersWithFile.isEmpty()) {
-            System.out.println("No peers have the file. Exiting.");
-            return;
-        }
-
-        // 3) Create the destination folder if it doesn't exist
-        File downloadFolderFile = new File(destinationFolder);
-        if (!downloadFolderFile.exists()) {
-            downloadFolderFile.mkdirs();
-        }
-
-        // 4) Prepare to download the file
-        File outFile = new File(downloadFolderFile, TARGET_FILE_NAME);
-        try (RandomAccessFile rAF = new RandomAccessFile(outFile, "rw")) {
-            rAF.setLength(fileLength);
-
-            int chunkSize = 256000;
-            int totalChunks = (int) Math.ceil(fileLength / (double) chunkSize);
-
-            // Create the shared downloader object
-            MultiSourceDownloader msDownloader = new MultiSourceDownloader(TARGET_FILE_NAME, rAF, totalChunks);
-
-            // 5) Use an ExecutorService for parallel downloads
-            ExecutorService executor = Executors.newFixedThreadPool(peersWithFile.size());
-            List<Future<?>> futures = new ArrayList<>();
-
-            for (String peerIP : peersWithFile) {
-                int finalFileLength = fileLength;
-                futures.add(executor.submit(() ->
-                        downloadChunksFromPeer(peerIP, SERVER_PORT, msDownloader, finalFileLength)
-                ));
-            }
-
-            // Wait until all chunks are downloaded or all threads have finished
-            boolean allDone = false;
-            while (!allDone) {
-                allDone = msDownloader.allChunksDownloaded() ||
-                        futures.stream().allMatch(Future::isDone);
-
-                if (!allDone) {
-                    Thread.sleep(500);
+                if (msDownloader.allChunksDownloaded()) {
+                    System.out.println(">>> Multi-source download complete for file: " + fileName);
+                } else {
+                    System.out.println(">>> Could not download all chunks from available peers.");
                 }
-            }
-
-            executor.shutdownNow();
-
-            if (msDownloader.allChunksDownloaded()) {
-                System.out.println(">>> Multi-source download complete for file: " + TARGET_FILE_NAME);
-            } else {
-                System.out.println(">>> Could not download all chunks from available peers.");
             }
 
         } catch (Exception e) {
@@ -112,10 +104,6 @@ public class FileClient {
         }
     }
 
-    /**
-     * Connects to a single peer and retrieves random chunks of the file.
-     * Only writes chunks that haven't been downloaded yet.
-     */
     private static void downloadChunksFromPeer(
             String peerIP,
             int port,
@@ -128,21 +116,18 @@ public class FileClient {
 
             System.out.println("Connecting to peer: " + peerIP);
 
-            // The server will send fileCount, we must read it:
             int fileCount = dIS.readInt();
             for (int i = 0; i < fileCount; i++) {
                 dIS.readUTF();
             }
 
-            // Request the same file
             dOS.writeUTF(msDownloader.getFileName());
             int length = dIS.readInt();
             if (length <= 0) {
-                System.out.println("Peer " + peerIP + " -> does NOT actually have file " + msDownloader.getFileName());
+                System.out.println("Peer " + peerIP + " -> does NOT have file " + msDownloader.getFileName());
                 return;
             }
 
-            // Now read chunks until the server sends -1 or we have all chunks
             RandomAccessFile rAF = msDownloader.getRandomAccessFile();
             int chunkSize = 256000;
             int chunksReceivedHere = 0;
@@ -150,7 +135,7 @@ public class FileClient {
             while (!msDownloader.allChunksDownloaded()) {
                 int chunkIndex = dIS.readInt();
                 if (chunkIndex == -1) {
-                    // server signals no more chunks
+                    // no more chunks
                     break;
                 }
 
@@ -158,7 +143,6 @@ public class FileClient {
                 byte[] buffer = new byte[readBytes];
                 dIS.readFully(buffer);
 
-                // If we haven't downloaded this chunk yet, write it
                 if (!msDownloader.isChunkDownloaded(chunkIndex)) {
                     synchronized (rAF) {
                         rAF.seek((long)chunkIndex * chunkSize);
@@ -168,7 +152,6 @@ public class FileClient {
                     chunksReceivedHere++;
                 }
 
-                // Acknowledge the chunk index
                 dOS.writeInt(chunkIndex);
                 dOS.flush();
 
@@ -184,9 +167,6 @@ public class FileClient {
         }
     }
 
-    /**
-     * Broadcast PING on UDP to discover peers, wait for PONGs.
-     */
     private static List<String> startPeerDiscovery(String broadcastAddress, int targetPort) {
         List<String> peerIPs = new ArrayList<>();
         try (DatagramSocket socket = new DatagramSocket()) {
@@ -195,16 +175,14 @@ public class FileClient {
             String broadcastMsg = "PING from peer!";
             byte[] sendData = broadcastMsg.getBytes();
 
-            // Send broadcast packets
-            for (int i = 0; i < 10; i++) {
+            for (int i = 0; i < 20; i++) {
                 DatagramPacket packet = new DatagramPacket(sendData, sendData.length, broadcastInet, targetPort);
                 socket.send(packet);
                 System.out.println("Broadcast packet sent: " + (i + 1));
                 Thread.sleep(500);
             }
 
-            // Listen for responses
-            socket.setSoTimeout(5000); // 5 seconds
+            socket.setSoTimeout(5000);
             byte[] buffer = new byte[1024];
 
             while (true) {
@@ -221,20 +199,17 @@ public class FileClient {
                         }
                     }
                 } catch (SocketTimeoutException e) {
-                    break; // stop listening
+                    break;
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            System.err.println("Peer discovery error: " + e.getMessage());
         }
         return peerIPs;
     }
 }
 
-/**
- * Helper class to track which chunks of the file are downloaded,
- * and allow multiple threads to share the same RandomAccessFile safely.
- */
+// Unchanged helper:
 class MultiSourceDownloader {
     private final String fileName;
     private final RandomAccessFile rAF;
