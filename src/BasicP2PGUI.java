@@ -1,18 +1,21 @@
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.util.Set;
 
 public class BasicP2PGUI extends JFrame {
 
-    private Thread serverThread;  // We'll store the thread that runs FileServer.main
+    private Thread serverThread;
+    private JList<String> foundFilesList;
+    private DefaultListModel<String> foundFilesModel;
 
     public BasicP2PGUI() {
         super("Basic P2P GUI");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(500, 200);
+        setSize(500, 400);
         setLocationRelativeTo(null);
 
-        // ====== MENU BAR ======
+        // ===== MENU BAR =====
         JMenuBar menuBar = new JMenuBar();
         JMenu fileMenu = new JMenu("File");
         JMenuItem connectItem = new JMenuItem("Connect");
@@ -23,41 +26,88 @@ public class BasicP2PGUI extends JFrame {
         menuBar.add(fileMenu);
         setJMenuBar(menuBar);
 
-        // "Connect" => run FileServer.main in a separate thread
-        connectItem.addActionListener(e -> startServer());
+        connectItem.addActionListener(e -> {
+            startServer();
+            // also refresh found files after connecting
+            refreshFoundFiles();
+        });
 
-        // "Disconnect" => call stopServer
-        disconnectItem.addActionListener(e -> stopServer());
+        disconnectItem.addActionListener(e -> {
+            stopServer();
+        });
 
-        // ====== CENTER PANEL: search field and button ======
-        JPanel panel = new JPanel(new FlowLayout());
+        // ===== MAIN PANEL =====
+        JPanel mainPanel = new JPanel(new BorderLayout());
+
+        // top row: "Enter file name" and Start button
+        JPanel topPanel = new JPanel(new FlowLayout());
         JLabel label = new JLabel("Enter file name:");
         JTextField fileField = new JTextField(20);
-        JButton startButton = new JButton("Start");
+        JButton startButton = new JButton("Search");
+        topPanel.add(label);
+        topPanel.add(fileField);
+        topPanel.add(startButton);
 
-        panel.add(label);
-        panel.add(fileField);
-        panel.add(startButton);
-
-        // "Start" => use FileClient.search(...) with the typed name
+        // The Search button is now "non-functional" for download. We'll keep code:
         startButton.addActionListener(e -> {
             String fileName = fileField.getText().trim();
             if (!fileName.isEmpty()) {
-                // call our new static method
-                FileClient.search(fileName);
-            } else {
-                System.out.println("No file name entered.");
+                System.out.println("Search button clicked. Not triggering a direct download.");
+                // If you wanted to still use it, you could do: FileClient.search(fileName);
+                // but the requirement says "make the Search button non-functional" for now.
             }
         });
 
-        getContentPane().add(panel, BorderLayout.CENTER);
+        mainPanel.add(topPanel, BorderLayout.NORTH);
+
+        // ====== FOUND FILES PANEL ======
+        JPanel foundPanel = new JPanel(new BorderLayout());
+        foundPanel.setBorder(BorderFactory.createTitledBorder("Found Files"));
+
+        foundFilesModel = new DefaultListModel<>();
+        foundFilesList = new JList<>(foundFilesModel);
+        foundFilesList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+
+        // Add double-click listener
+        foundFilesList.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2) {
+                    int index = foundFilesList.locationToIndex(e.getPoint());
+                    if (index >= 0) {
+                        String selected = foundFilesModel.getElementAt(index);
+                        if (!selected.endsWith("/")) {
+                            // double-click on file -> download
+                            FileClient.search(selected);
+                        } else {
+                            // it's a folder -> do nothing
+                            System.out.println("Folders are not downloadable: " + selected);
+                        }
+                    }
+                }
+            }
+        });
+
+        JScrollPane foundScrollPane = new JScrollPane(foundFilesList);
+        foundPanel.add(foundScrollPane, BorderLayout.CENTER);
+
+        mainPanel.add(foundPanel, BorderLayout.CENTER);
+
+        getContentPane().add(mainPanel);
     }
 
-    // ================== SERVER CONTROL ==================
+    // refresh the Found Files by listing from all peers
+    private void refreshFoundFiles() {
+        foundFilesModel.clear();
+        Set<String> allFiles = FileClient.listAllFilesFromPeers();
+        for (String f : allFiles) {
+            foundFilesModel.addElement(f);
+        }
+    }
+
     private void startServer() {
         if (serverThread == null) {
             serverThread = new Thread(() -> {
-                // We pass empty args to FileServer.main
                 FileServer.main(new String[0]);
             }, "ServerMainThread");
             serverThread.start();
@@ -69,11 +119,10 @@ public class BasicP2PGUI extends JFrame {
 
     private void stopServer() {
         System.out.println("Stopping server...");
-        FileServer.stopServer(); // signals server to end
-        serverThread = null;     // let it be GC'd
+        FileServer.stopServer();
+        serverThread = null;
     }
 
-    // ================== MAIN ==================
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             BasicP2PGUI gui = new BasicP2PGUI();

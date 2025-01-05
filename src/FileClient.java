@@ -9,7 +9,37 @@ public class FileClient {
     private static final int SERVER_PORT = 6789;
     private static final int BROADCAST_PORT = 9000;
 
-    // ===== NEW METHOD: search(...) instead of main
+    // ========= NEW METHOD: listAllFilesFromPeers() ========
+    public static Set<String> listAllFilesFromPeers() {
+        List<String> peerIPs = startPeerDiscovery("192.168.1.255", BROADCAST_PORT);
+        Set<String> foundFiles = new LinkedHashSet<>();
+
+        for (String peerIP : peerIPs) {
+            try (Socket socket = new Socket(peerIP, SERVER_PORT);
+                 DataInputStream dIS = new DataInputStream(socket.getInputStream());
+                 DataOutputStream dOS = new DataOutputStream(socket.getOutputStream())) {
+
+                // read file count
+                int fileCount = dIS.readInt();
+                for (int i = 0; i < fileCount; i++) {
+                    String fileName = dIS.readUTF();
+                    foundFiles.add(fileName); // no duplicates because Set
+                }
+
+                // we must send something as a requested file;
+                // if empty, server returns -1
+                dOS.writeUTF("");
+                int lengthFromThisPeer = dIS.readInt();
+                // ignore that for listing
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        return foundFiles;
+    }
+
+    // ========= search(...) method remains as is, except we remove references
+    // to a main() we no longer need
     public static void search(String fileName) {
         try {
             List<String> peerIPs = startPeerDiscovery("192.168.1.255", BROADCAST_PORT);
@@ -18,7 +48,6 @@ public class FileClient {
                 return;
             }
 
-            // Check which peers have the requested file
             List<String> peersWithFile = new ArrayList<>();
             int fileLength = -1;
 
@@ -32,13 +61,11 @@ public class FileClient {
                         dIS.readUTF();
                     }
 
-                    // Ask for the user-specified file
                     dOS.writeUTF(fileName);
                     int lengthFromThisPeer = dIS.readInt();
 
                     if (lengthFromThisPeer > 0) {
                         peersWithFile.add(peerIP);
-                        // Save length if not already set
                         if (fileLength < 0) {
                             fileLength = lengthFromThisPeer;
                         }
@@ -54,13 +81,11 @@ public class FileClient {
                 return;
             }
 
-            // Prepare the destination folder
             File downloadFolderFile = new File(destinationFolder);
             if (!downloadFolderFile.exists()) {
                 downloadFolderFile.mkdirs();
             }
 
-            // Create output file
             File outFile = new File(downloadFolderFile, fileName);
             try (RandomAccessFile rAF = new RandomAccessFile(outFile, "rw")) {
                 rAF.setLength(fileLength);
@@ -135,7 +160,6 @@ public class FileClient {
             while (!msDownloader.allChunksDownloaded()) {
                 int chunkIndex = dIS.readInt();
                 if (chunkIndex == -1) {
-                    // no more chunks
                     break;
                 }
 
@@ -175,7 +199,7 @@ public class FileClient {
             String broadcastMsg = "PING from peer!";
             byte[] sendData = broadcastMsg.getBytes();
 
-            for (int i = 0; i < 20; i++) {
+            for (int i = 0; i < 10; i++) {
                 DatagramPacket packet = new DatagramPacket(sendData, sendData.length, broadcastInet, targetPort);
                 socket.send(packet);
                 System.out.println("Broadcast packet sent: " + (i + 1));
@@ -209,7 +233,7 @@ public class FileClient {
     }
 }
 
-// Unchanged helper:
+// Unchanged helper class
 class MultiSourceDownloader {
     private final String fileName;
     private final RandomAccessFile rAF;
