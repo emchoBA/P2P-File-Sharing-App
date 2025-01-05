@@ -28,13 +28,29 @@ public class BasicP2PGUI extends JFrame {
         // ===== MENU BAR =====
         JMenuBar menuBar = new JMenuBar();
         JMenu fileMenu = new JMenu("File");
+        JMenu helpMenu = new JMenu("Help");
         JMenuItem connectItem = new JMenuItem("Connect");
         JMenuItem disconnectItem = new JMenuItem("Disconnect");
+        JMenuItem exitItem = new JMenuItem("Exit");
+        JMenuItem aboutItem = new JMenuItem("About");
 
         fileMenu.add(connectItem);
         fileMenu.add(disconnectItem);
+        fileMenu.add(exitItem);
+        helpMenu.add(aboutItem);
         menuBar.add(fileMenu);
+        menuBar.add(helpMenu);
         setJMenuBar(menuBar);
+
+        aboutItem.addActionListener(e -> {
+            JOptionPane.showMessageDialog(this, "Emir Emri \n" +
+                    "20210702029", "About", JOptionPane.INFORMATION_MESSAGE);
+        });
+
+        exitItem.addActionListener(e -> {
+            stopServer();
+            System.exit(0);
+        });
 
         connectItem.addActionListener(e -> {
             startServer();

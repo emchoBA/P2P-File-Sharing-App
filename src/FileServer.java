@@ -7,7 +7,7 @@ public class FileServer implements Runnable {
 
     private Socket socket;
     private static String rootFolder = "shared_files"; // Default shared folder
-
+    private static final int SERVER_PORT = 6789;
     public static volatile boolean keepRunning = true;
     private static ServerSocket welcomeSocket;
     private static DatagramSocket peerDatagramSocket;
@@ -75,7 +75,7 @@ public class FileServer implements Runnable {
         }
 
         try {
-            welcomeSocket = new ServerSocket(6789);
+            welcomeSocket = new ServerSocket(SERVER_PORT);
             System.out.println(">>> Server is running...");
             while (keepRunning) {
                 Socket connectionSocket = welcomeSocket.accept();

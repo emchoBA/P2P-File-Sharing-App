@@ -8,9 +8,10 @@ public class FileClient {
     private static String destinationFolder = "downloads";
     private static final int SERVER_PORT = 6789;
     private static final int BROADCAST_PORT = 9000;
+    private static final String BROADCAST_IP = "192.168.1.255";
 
     public static Set<String> listAllFilesFromPeers() {
-        List<String> peerIPs = startPeerDiscovery("192.168.1.255", BROADCAST_PORT);
+        List<String> peerIPs = startPeerDiscovery(BROADCAST_IP, BROADCAST_PORT);
         Set<String> foundFiles = new LinkedHashSet<>();
 
         for (String peerIP : peerIPs) {
@@ -50,7 +51,7 @@ public class FileClient {
 
     public static void search(String fileName) {
         try {
-            List<String> peerIPs = startPeerDiscovery("192.168.1.255", BROADCAST_PORT);
+            List<String> peerIPs = startPeerDiscovery(BROADCAST_IP, BROADCAST_PORT);
             if (peerIPs.isEmpty()) {
                 System.out.println("No peers discovered. Exiting search.");
                 return;
