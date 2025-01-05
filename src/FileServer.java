@@ -25,6 +25,21 @@ public class FileServer implements Runnable {
         System.out.println("FileServer exclusions updated.\nFolders: " + excludedFolders + "\nMasks: " + excludedMasks);
     }
 
+    // Update shared folder path
+    public static synchronized void setSharedFolder(String newFolder) {
+        File folder = new File(newFolder);
+        if (folder.exists() && folder.isDirectory()) {
+            rootFolder = folder.getAbsolutePath();
+            System.out.println("Shared folder updated to: " + rootFolder);
+        } else {
+            System.out.println("Invalid shared folder path: " + newFolder);
+        }
+    }
+
+    public static synchronized String getSharedFolder() {
+        return rootFolder;
+    }
+
     public static void stopServer() {
         keepRunning = false;
         try {

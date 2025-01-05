@@ -39,10 +39,13 @@ public class BasicP2PGUI extends JFrame {
         connectItem.addActionListener(e -> {
             startServer();
             refreshFoundFiles();
+            JOptionPane.showMessageDialog(this, "Connected", "Info", JOptionPane.INFORMATION_MESSAGE);
         });
 
         disconnectItem.addActionListener(e -> {
             stopServer();
+            JOptionPane.showMessageDialog(this, "Disconnected", "Info", JOptionPane.INFORMATION_MESSAGE);
+            clearTextFields();
         });
 
         // ===== MAIN PANEL =====
@@ -58,7 +61,65 @@ public class BasicP2PGUI extends JFrame {
         topPanel.add(fileField);
         topPanel.add(startButton);
 
-        mainPanel.add(topPanel, BorderLayout.NORTH);
+        //mainPanel.add(topPanel, BorderLayout.NORTH);
+
+        // Add shared folder input area
+        JLabel sharedFolderLabel = new JLabel("Root of the P2P Shared Folder:");
+        JTextField sharedFolderField = new JTextField(30);
+        sharedFolderField.setText(FileServer.getSharedFolder());
+        JButton setSharedFolderButton = new JButton("Set");
+        setSharedFolderButton.addActionListener(e -> {
+            String path = sharedFolderField.getText().trim();
+            if (!path.isEmpty()) {
+                FileServer.setSharedFolder(path);
+            } else {
+                JOptionPane.showMessageDialog(this, "Invalid shared folder path.", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        // Add download folder input area
+        JLabel downloadFolderLabel = new JLabel("Destination Folder:");
+        JTextField downloadFolderField = new JTextField(30);
+        downloadFolderField.setText(FileClient.getDownloadFolder());
+        JButton setDownloadFolderButton = new JButton("Set");
+        setDownloadFolderButton.addActionListener(e -> {
+            String path = downloadFolderField.getText().trim();
+            if (!path.isEmpty()) {
+                FileClient.setDownloadFolder(path);
+            } else {
+                JOptionPane.showMessageDialog(this, "Invalid download folder path.", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+
+        /**
+        JPanel folderPathsPanel = new JPanel(new FlowLayout());
+        folderPathsPanel.add(sharedFolderLabel);
+        folderPathsPanel.add(sharedFolderField);
+        folderPathsPanel.add(setSharedFolderButton);
+        folderPathsPanel.add(downloadFolderLabel);
+        folderPathsPanel.add(downloadFolderField);
+        folderPathsPanel.add(setDownloadFolderButton);
+        */
+        JPanel RootFolderPanel = new JPanel(new FlowLayout());
+        RootFolderPanel.add(sharedFolderLabel);
+        RootFolderPanel.add(sharedFolderField);
+        RootFolderPanel.add(setSharedFolderButton);
+
+        JPanel DownloadFolderPanel = new JPanel(new FlowLayout());
+        DownloadFolderPanel.add(downloadFolderLabel);
+        DownloadFolderPanel.add(downloadFolderField);
+        DownloadFolderPanel.add(setDownloadFolderButton);
+
+        JPanel FolderandSeachPanel = new JPanel();
+        FolderandSeachPanel.setLayout(new BoxLayout(FolderandSeachPanel, BoxLayout.Y_AXIS));
+
+        FolderandSeachPanel.add(topPanel);
+        FolderandSeachPanel.add(RootFolderPanel);
+        FolderandSeachPanel.add(DownloadFolderPanel);
+
+        mainPanel.add(FolderandSeachPanel, BorderLayout.NORTH);
+
+
 
         // ========== FOUND FILES PANEL ==========
         JPanel foundPanel = new JPanel(new BorderLayout());
@@ -235,6 +296,15 @@ public class BasicP2PGUI extends JFrame {
         FileServer.stopServer();
         serverThread = null;
     }
+
+    private void clearTextFields() {
+        // Clear text fields
+        foundFilesModel.clear();
+        excludedFoldersModel.clear();
+        excludedMasksModel.clear();
+    }
+
+
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {

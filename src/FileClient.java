@@ -33,6 +33,21 @@ public class FileClient {
         return foundFiles;
     }
 
+    // Update download folder path
+    public static synchronized void setDownloadFolder(String newFolder) {
+        File folder = new File(newFolder);
+        if (folder.exists() && folder.isDirectory()) {
+            destinationFolder = folder.getAbsolutePath();
+            System.out.println("Download folder updated to: " + destinationFolder);
+        } else {
+            System.out.println("Invalid download folder path: " + newFolder);
+        }
+    }
+
+    public static synchronized String getDownloadFolder() {
+        return destinationFolder;
+    }
+
     public static void search(String fileName) {
         try {
             List<String> peerIPs = startPeerDiscovery("192.168.1.255", BROADCAST_PORT);
