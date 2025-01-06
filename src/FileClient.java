@@ -4,13 +4,20 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
+interface DownloadListener {
+    void onDownloadProgress(String fileName, int percentage);
+}
 public class FileClient {
 
     private static String destinationFolder = "downloads"; // creates folder in project if left like this
     private static final int SERVER_PORT = 6789; // tcp
     private static final int BROADCAST_PORT = 9000; // udp
     private static final String BROADCAST_IP = "192.168.1.255"; // CHANGE THIS IN LAB
+    private static DownloadListener downloadListener;
 
+    public static void setDownloadListener(DownloadListener listener) {
+        downloadListener = listener;
+    }
     /**
      * Sunum sırasında port ve IP adreslerini kontrol
      * IP ADRESİ 412 LABINDA 10.2.6.255 !!!!!!!!!!!!!!!!!
@@ -41,7 +48,6 @@ public class FileClient {
         return foundFiles;
     }
 
-    // Update download folder path
     public static synchronized void setDownloadFolder(String newFolder) {
         File folder = new File(newFolder);
         if (folder.exists() && folder.isDirectory()) {
@@ -121,6 +127,10 @@ public class FileClient {
 
                 MultiSourceDownloader msDownloader = new MultiSourceDownloader(fileName, rAF, totalChunks);
 
+                if(downloadListener != null){
+                    msDownloader.setDownloadListener(downloadListener);
+                }
+
                 ExecutorService executor = Executors.newFixedThreadPool(peersWithFile.size()); // for parallel download, thread pooling
                 List<Future<?>> futures = new ArrayList<>();
 
@@ -144,6 +154,9 @@ public class FileClient {
 
                 if (msDownloader.allChunksDownloaded()) {
                     System.out.println(">>> Multi-source download complete for file: " + fileName);
+                    if(downloadListener != null){
+                        downloadListener.onDownloadProgress(fileName, 100);
+                    }
                 } else {
                     System.out.println(">>> Could not download all chunks from available peers.");
                 }
@@ -276,7 +289,11 @@ class MultiSourceDownloader {
     private final boolean[] chunkDownloaded;
     private final int totalChunks;
     private final AtomicInteger downloadedCount = new AtomicInteger(0); // manage different peers
+    private  DownloadListener downloadListener;
 
+    public void setDownloadListener(DownloadListener listener) {
+        this.downloadListener = listener;
+    }
     public MultiSourceDownloader(String fileName, RandomAccessFile rAF, int totalChunks) {
         this.fileName = fileName;
         this.rAF = rAF;
@@ -304,6 +321,10 @@ class MultiSourceDownloader {
         if (!chunkDownloaded[index]) {
             chunkDownloaded[index] = true;
             downloadedCount.incrementAndGet(); // set upon all
+            if(downloadListener != null){
+                int percentage = (int) (((double) downloadedCount.get() / totalChunks) * 100);
+                downloadListener.onDownloadProgress(fileName, percentage);
+            }
         }
     }
 

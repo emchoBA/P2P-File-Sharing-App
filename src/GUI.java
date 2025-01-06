@@ -14,7 +14,7 @@ public class GUI extends JFrame {
     private DefaultListModel<String> excludedFoldersModel = new DefaultListModel<>();
     private DefaultListModel<String> excludedMasksModel = new DefaultListModel<>();
     private List<String> allFoundFiles = new ArrayList<>(); // local listing for search
-
+    private JProgressBar progressBar;
     public GUI() {
         super("P2P");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -237,6 +237,21 @@ public class GUI extends JFrame {
                 searchAndDisplay(searchText);
             }
         });
+
+        progressBar = new JProgressBar(0, 100);
+        progressBar.setStringPainted(true);
+        FolderandSeachPanel.add(progressBar);
+
+        FileClient.setDownloadListener(((fileName, percentage) -> {
+            SwingUtilities.invokeLater(() -> {
+                progressBar.setValue(percentage);
+                progressBar.setString("Downloading: " + fileName + " (" + percentage + "%)");
+                if (percentage == 100) {
+                    progressBar.setValue(0);
+                    JOptionPane.showMessageDialog(this, "Downloaded: " + fileName, "Download", JOptionPane.INFORMATION_MESSAGE);
+                }
+            });
+        }));
     }
 
     //refresh found files from peers and store in allFoundFiles and display them
