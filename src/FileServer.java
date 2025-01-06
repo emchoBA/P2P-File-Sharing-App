@@ -6,16 +6,16 @@ import java.util.concurrent.*;
 public class FileServer implements Runnable {
 
     private Socket socket;
-    private static String rootFolder = "shared_files"; // Default shared folder
-    private static final int SERVER_PORT = 6789;
+    private static String rootFolder = "shared_files";
+    private static final int SERVER_PORT = 6789; // udp
     public static volatile boolean keepRunning = true;
-    private static ServerSocket welcomeSocket;
-    private static DatagramSocket peerDatagramSocket;
+    private static ServerSocket welcomeSocket; // main for incoming connections
+    private static DatagramSocket peerDatagramSocket; // ping pong
 
     private static Set<String> excludedFolders = new HashSet<>();
     private static Set<String> excludedMasks = new HashSet<>();
 
-    public static synchronized void setExclusions(Set<String> folders, Set<String> masks) {
+    public static synchronized void setExclusions(Set<String> folders, Set<String> masks) { //gets from GUI
         excludedFolders.clear();
         excludedFolders.addAll(folders);
 
@@ -25,7 +25,6 @@ public class FileServer implements Runnable {
         System.out.println("FileServer exclusions updated.\nFolders: " + excludedFolders + "\nMasks: " + excludedMasks);
     }
 
-    // Update shared folder path
     public static synchronized void setSharedFolder(String newFolder) {
         File folder = new File(newFolder);
         if (folder.exists() && folder.isDirectory()) {
@@ -64,9 +63,9 @@ public class FileServer implements Runnable {
     }
 
     public static void main(String[] args) {
-        ExecutorService threadService = Executors.newCachedThreadPool();
+        ExecutorService threadService = Executors.newCachedThreadPool(); // pooling for clients
 
-        Thread peerListenerThread = new Thread(() -> peerDatagramSocket = startPeerListener(9000));
+        Thread peerListenerThread = new Thread(() -> peerDatagramSocket = startPeerListener(9000)); // seperate thread for listening, not in pool
         peerListenerThread.start();
 
         File sharedFolder = new File(rootFolder);
@@ -77,7 +76,7 @@ public class FileServer implements Runnable {
         try {
             welcomeSocket = new ServerSocket(SERVER_PORT);
             System.out.println(">>> Server is running...");
-            while (keepRunning) {
+            while (keepRunning) { // new tread for each client
                 Socket connectionSocket = welcomeSocket.accept();
                 threadService.execute(new FileServer(connectionSocket));
             }
@@ -91,6 +90,7 @@ public class FileServer implements Runnable {
         }
     }
 
+    // sends list of files then handle transfer requests
     @Override
     public void run() {
         try {
@@ -98,26 +98,26 @@ public class FileServer implements Runnable {
             DataOutputStream dOS = new DataOutputStream(socket.getOutputStream());
             DataInputStream dIS = new DataInputStream(socket.getInputStream());
 
-            // Recursively gather file/folder names (relative to shared_files)
+
             File folder = new File(rootFolder);
             List<String> allItems = listFilesRecursively(folder);
 
-            dOS.writeInt(allItems.size());
+            dOS.writeInt(allItems.size()); // send count then each item
             for (String item : allItems) {
                 dOS.writeUTF(item);
             }
 
-            // Now read requested file
+            // read requested file
             String requestedFile = dIS.readUTF();
             if (requestedFile == null || requestedFile.isEmpty()) {
-                // client is just listing
+                // client is just listing, didnt want file
                 dOS.writeInt(-1);
                 dOS.close();
                 return;
             }
 
-            // Convert e.g. "folder/2a.png" => "shared_files/folder/2a.png"
-            File fileToSend = new File(rootFolder, requestedFile.replace('/', File.separatorChar));
+            File fileToSend = new File(rootFolder, requestedFile.replace('/', File.separatorChar)); // add root to files, especiallt important for subfolders
+            /////////////////////
             if (fileToSend.exists() && fileToSend.isFile()) {
                 RandomAccessFile rAF = new RandomAccessFile(fileToSend, "r");
                 int length = (int) fileToSend.length();
@@ -154,7 +154,9 @@ public class FileServer implements Runnable {
             e.printStackTrace();
         }
     }
+    /////////////////////////
 
+    // listen ping send pong
     private static DatagramSocket startPeerListener(int listenPort) {
         DatagramSocket socket = null;
         try {
@@ -188,19 +190,13 @@ public class FileServer implements Runnable {
         return socket;
     }
 
-    /**
-     * Recursively list files/folders under rootFolder, returning relative paths like:
-     *  "2a.png"  or  "folder/2a.png"  or  "folder/subfolder/abc.txt" etc.
-     */
+    // for subfolders, recursive
     private static List<String> listFilesRecursively(File base) {
         List<String> result = new ArrayList<>();
         if (!base.exists()) return result;
 
         if (base.isDirectory()) {
-            // if this directory is top-level "shared_files", don't exclude it by name
-            // but if it's a subfolder that matches excludedFolders, skip
             if (!base.getName().equals(new File(rootFolder).getName())) {
-                // e.g. base.getName() = "folder"
                 if (excludedFolders.contains(base.getName())) {
                     return result; // skip entire folder
                 }
@@ -208,8 +204,7 @@ public class FileServer implements Runnable {
 
             File[] children = base.listFiles();
             if (children == null || children.length == 0) {
-                // empty folder => just "folder/"
-                // but only if it's not the top-level root
+                // empty folder -> just folder/
                 if (!base.getAbsolutePath().equals(new File(rootFolder).getAbsolutePath())) {
                     String rel = getRelativePath(base);
                     result.add(rel + "/");
@@ -235,10 +230,7 @@ public class FileServer implements Runnable {
         return result;
     }
 
-    /**
-     * Return the path relative to rootFolder, using forward slashes.
-     * e.g. if f = shared_files/folder/2a.png => "folder/2a.png"
-     */
+    // for folders, get relative path (root kaldır
     private static String getRelativePath(File f) {
         File root = new File(rootFolder).getAbsoluteFile();
         File absoluteFile = f.getAbsoluteFile();
@@ -249,11 +241,10 @@ public class FileServer implements Runnable {
             if (relative.startsWith(File.separator)) {
                 relative = relative.substring(1);
             }
-            // standardize to forward slash
             relative = relative.replace(File.separatorChar, '/');
             return relative;
         }
-        // fallback
+        // fallback if not folder
         return f.getName();
     }
 
@@ -263,7 +254,7 @@ public class FileServer implements Runnable {
         }
         for (String mask : excludedMasks) {
             if (mask.startsWith("*.")) {
-                String ext = mask.substring(1);
+                String ext = mask.substring(1); // for extensions
                 if (fileName.endsWith(ext)) {
                     return true;
                 }

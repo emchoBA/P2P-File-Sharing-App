@@ -11,13 +11,9 @@ public class BasicP2PGUI extends JFrame {
     private Thread serverThread;
     private JList<String> foundFilesList;
     private DefaultListModel<String> foundFilesModel;
-
-    // Exclusion Models
     private DefaultListModel<String> excludedFoldersModel = new DefaultListModel<>();
     private DefaultListModel<String> excludedMasksModel = new DefaultListModel<>();
-
-    // Store all found files for local searching
-    private List<String> allFoundFiles = new ArrayList<>();
+    private List<String> allFoundFiles = new ArrayList<>(); // local listing for search
 
     public BasicP2PGUI() {
         super("Basic P2P GUI");
@@ -25,7 +21,7 @@ public class BasicP2PGUI extends JFrame {
         setSize(700, 500);
         setLocationRelativeTo(null);
 
-        // ===== MENU BAR =====
+
         JMenuBar menuBar = new JMenuBar();
         JMenu fileMenu = new JMenu("File");
         JMenu helpMenu = new JMenu("Help");
@@ -64,11 +60,11 @@ public class BasicP2PGUI extends JFrame {
             clearTextFields();
         });
 
-        // ===== MAIN PANEL =====
+
         JPanel mainPanel = new JPanel(new BorderLayout());
         getContentPane().add(mainPanel);
 
-        // top row: "Enter file name or keyword:" + "Search"
+
         JPanel topPanel = new JPanel(new FlowLayout());
         JLabel label = new JLabel("Enter file name or keyword:");
         JTextField fileField = new JTextField(20);
@@ -79,10 +75,10 @@ public class BasicP2PGUI extends JFrame {
 
         //mainPanel.add(topPanel, BorderLayout.NORTH);
 
-        // Add shared folder input area
+
         JLabel sharedFolderLabel = new JLabel("Root of the P2P Shared Folder:");
         JTextField sharedFolderField = new JTextField(30);
-        sharedFolderField.setText(FileServer.getSharedFolder());
+        sharedFolderField.setText(FileServer.getSharedFolder()); //default
         JButton setSharedFolderButton = new JButton("Set");
         setSharedFolderButton.addActionListener(e -> {
             String path = sharedFolderField.getText().trim();
@@ -93,7 +89,7 @@ public class BasicP2PGUI extends JFrame {
             }
         });
 
-        // Add download folder input area
+
         JLabel downloadFolderLabel = new JLabel("Destination Folder:");
         JTextField downloadFolderField = new JTextField(30);
         downloadFolderField.setText(FileClient.getDownloadFolder());
@@ -137,7 +133,6 @@ public class BasicP2PGUI extends JFrame {
 
 
 
-        // ========== FOUND FILES PANEL ==========
         JPanel foundPanel = new JPanel(new BorderLayout());
         foundPanel.setBorder(BorderFactory.createTitledBorder("Found Files"));
 
@@ -145,7 +140,7 @@ public class BasicP2PGUI extends JFrame {
         foundFilesList = new JList<>(foundFilesModel);
         foundFilesList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
-        // Double-click to download
+        // 2 click download
         foundFilesList.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent e) {
@@ -168,11 +163,10 @@ public class BasicP2PGUI extends JFrame {
 
         mainPanel.add(foundPanel, BorderLayout.CENTER);
 
-        // ========== EXCLUSIONS PANEL ==========
+        // exclusion
         JPanel exclusionsPanel = new JPanel(new GridLayout(1, 2, 5, 5));
         exclusionsPanel.setBorder(BorderFactory.createTitledBorder("Exclusions"));
 
-        // (A) Excluded Folders
         JPanel folderExclPanel = new JPanel(new BorderLayout());
         folderExclPanel.setBorder(BorderFactory.createTitledBorder("Exclude Folders"));
         JList<String> folderExclList = new JList<>(excludedFoldersModel);
@@ -184,7 +178,6 @@ public class BasicP2PGUI extends JFrame {
         folderExclBtnPanel.add(delFolderExclBtn);
         folderExclPanel.add(folderExclBtnPanel, BorderLayout.SOUTH);
 
-        // (B) Excluded Masks
         JPanel maskExclPanel = new JPanel(new BorderLayout());
         maskExclPanel.setBorder(BorderFactory.createTitledBorder("Exclude File Masks"));
         JList<String> maskExclList = new JList<>(excludedMasksModel);
@@ -201,7 +194,6 @@ public class BasicP2PGUI extends JFrame {
 
         mainPanel.add(exclusionsPanel, BorderLayout.SOUTH);
 
-        // ========== Exclusion Buttons Logic ==========
         addFolderExclBtn.addActionListener(e -> {
             String folderName = JOptionPane.showInputDialog(this, "Folder name to exclude?");
             if (folderName != null && !folderName.trim().isEmpty()) {
@@ -236,8 +228,7 @@ public class BasicP2PGUI extends JFrame {
             }
         });
 
-        // ========== SEARCH BUTTON ==========
-        startButton.addActionListener(e -> {
+        startButton.addActionListener(e -> { // search button
             String searchText = fileField.getText().trim();
             if (searchText.isEmpty()) {
                 // if no search text, just show all
@@ -248,7 +239,7 @@ public class BasicP2PGUI extends JFrame {
         });
     }
 
-    // Refresh found files from peers, store in allFoundFiles, then display them
+    //refresh found files from peers and store in allFoundFiles and display them
     private void refreshFoundFiles() {
         foundFilesModel.clear();
         allFoundFiles.clear();
@@ -261,7 +252,6 @@ public class BasicP2PGUI extends JFrame {
         }
     }
 
-    // Show all found files without filtering
     private void displayAllFiles() {
         foundFilesModel.clear();
         for (String item : allFoundFiles) {
@@ -269,7 +259,6 @@ public class BasicP2PGUI extends JFrame {
         }
     }
 
-    // Filter from the existing allFoundFiles
     private void searchAndDisplay(String query) {
         foundFilesModel.clear();
         for (String item : allFoundFiles) {
@@ -282,7 +271,6 @@ public class BasicP2PGUI extends JFrame {
         }
     }
 
-    // Send updated exclusion sets to the server
     private void updateServerExclusions() {
         Set<String> folderSet = new HashSet<>();
         for (int i = 0; i < excludedFoldersModel.size(); i++) {
@@ -314,7 +302,6 @@ public class BasicP2PGUI extends JFrame {
     }
 
     private void clearTextFields() {
-        // Clear text fields
         foundFilesModel.clear();
         excludedFoldersModel.clear();
         excludedMasksModel.clear();

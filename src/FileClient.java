@@ -2,14 +2,21 @@ import java.io.*;
 import java.net.*;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class FileClient {
 
-    private static String destinationFolder = "downloads";
-    private static final int SERVER_PORT = 6789;
-    private static final int BROADCAST_PORT = 9000;
-    private static final String BROADCAST_IP = "192.168.1.255";
+    private static String destinationFolder = "downloads"; // creates folder in project if left like this
+    private static final int SERVER_PORT = 6789; // tcp
+    private static final int BROADCAST_PORT = 9000; // udp
+    private static final String BROADCAST_IP = "192.168.1.255"; // CHANGE THIS IN LAB
 
+    /**
+     * Sunum sırasında port ve IP adreslerini kontrol
+     * IP ADRESİ 412 LABINDA 10.2.6.255 !!!!!!!!!!!!!!!!!
+     */
+
+    //
     public static Set<String> listAllFilesFromPeers() {
         List<String> peerIPs = startPeerDiscovery(BROADCAST_IP, BROADCAST_PORT);
         Set<String> foundFiles = new LinkedHashSet<>();
@@ -49,8 +56,11 @@ public class FileClient {
         return destinationFolder;
     }
 
+    // search file in peers, if found try to download from all peers that have that
+    // Yulearn üzerindeki kod
     public static void search(String fileName) {
         try {
+            // find peers
             List<String> peerIPs = startPeerDiscovery(BROADCAST_IP, BROADCAST_PORT);
             if (peerIPs.isEmpty()) {
                 System.out.println("No peers discovered. Exiting search.");
@@ -60,6 +70,7 @@ public class FileClient {
             List<String> peersWithFile = new ArrayList<>();
             int fileLength = -1;
 
+            // find peers that have that file
             for (String peerIP : peerIPs) {
                 try (Socket socket = new Socket(peerIP, SERVER_PORT);
                      DataInputStream dIS = new DataInputStream(socket.getInputStream());
@@ -67,16 +78,18 @@ public class FileClient {
 
                     int fileCount = dIS.readInt();
                     for (int i = 0; i < fileCount; i++) {
-                        dIS.readUTF(); // skip listing
+                        dIS.readUTF(); // skip listing, we only need if peer has the file
                     }
 
+                    // request file
                     dOS.writeUTF(fileName);
                     int lengthFromThisPeer = dIS.readInt();
 
-                    if (lengthFromThisPeer > 0) {
-                        peersWithFile.add(peerIP);
+                    if (lengthFromThisPeer > 0) { // peer has the file
+                        peersWithFile.add(peerIP); // add to list
                         if (fileLength < 0) {
-                            fileLength = lengthFromThisPeer;
+                            fileLength = lengthFromThisPeer; // store from first peer for memory, same file length
+                            // use this for percentage !!!!!!!!!!
                         }
                     }
                 } catch (IOException e) {
@@ -99,6 +112,7 @@ public class FileClient {
             File outFile = new File(downloadFolderFile, fileName.replace('/', File.separatorChar));
             outFile.getParentFile().mkdirs();
 
+            // write donloaded chunks
             try (RandomAccessFile rAF = new RandomAccessFile(outFile, "rw")) {
                 rAF.setLength(fileLength);
 
@@ -107,10 +121,10 @@ public class FileClient {
 
                 MultiSourceDownloader msDownloader = new MultiSourceDownloader(fileName, rAF, totalChunks);
 
-                ExecutorService executor = Executors.newFixedThreadPool(peersWithFile.size());
+                ExecutorService executor = Executors.newFixedThreadPool(peersWithFile.size()); // for parallel download, thread pooling
                 List<Future<?>> futures = new ArrayList<>();
 
-                for (String peerIP : peersWithFile) {
+                for (String peerIP : peersWithFile) { // parallel download from peers with executorService
                     int finalFileLength = fileLength;
                     futures.add(executor.submit(() ->
                             downloadChunksFromPeer(peerIP, SERVER_PORT, msDownloader, finalFileLength)
@@ -119,8 +133,7 @@ public class FileClient {
 
                 boolean allDone = false;
                 while (!allDone) {
-                    allDone = msDownloader.allChunksDownloaded()
-                            || futures.stream().allMatch(Future::isDone);
+                    allDone = msDownloader.allChunksDownloaded() || futures.stream().allMatch(Future::isDone); // double control
 
                     if (!allDone) {
                         Thread.sleep(500);
@@ -141,12 +154,15 @@ public class FileClient {
         }
     }
 
-    private static void downloadChunksFromPeer(
-            String peerIP,
-            int port,
-            MultiSourceDownloader msDownloader,
-            int fileLength
-    ) {
+    // runs parallel for multiple peers
+
+    /**
+     * Yulearn üzerindeki örnek kod üzerinden ilerledim
+     * run yerine fonksiyon olarak değiştirdim
+     * msDownloader ile multi-source sağladım
+     */
+    private static void downloadChunksFromPeer(String peerIP, int port, MultiSourceDownloader msDownloader, int fileLength) {
+        // fileLength for percentage -> eklemeye çalış güzel fikir
         try (Socket socket = new Socket(peerIP, port);
              DataInputStream dIS = new DataInputStream(socket.getInputStream());
              DataOutputStream dOS = new DataOutputStream(socket.getOutputStream())) {
@@ -158,6 +174,7 @@ public class FileClient {
                 dIS.readUTF();
             }
 
+            // request for specific file
             dOS.writeUTF(msDownloader.getFileName());
             int length = dIS.readInt();
             if (length <= 0) {
@@ -166,21 +183,24 @@ public class FileClient {
             }
 
             RandomAccessFile rAF = msDownloader.getRandomAccessFile();
-            int chunkSize = 256000;
+            int chunkSize = 256000; // 256 kb
             int chunksReceivedHere = 0;
 
+            // keeps downloading until all downloaded
+            // if signal is lost, breaks (broken pipe exception sebebi bu)
             while (!msDownloader.allChunksDownloaded()) {
                 int chunkIndex = dIS.readInt();
                 if (chunkIndex == -1) {
-                    break;
+                    break; // no more chunks from tihs peer
                 }
 
                 int readBytes = dIS.readInt();
                 byte[] buffer = new byte[readBytes];
                 dIS.readFully(buffer);
 
-                if (!msDownloader.isChunkDownloaded(chunkIndex)) {
-                    synchronized (rAF) {
+                // write to file if not already downloaded
+                if (!msDownloader.isChunkDownloaded(chunkIndex)) { // check array
+                    synchronized (rAF) { // only run this, dont run other threads (synchronized işlevi bu)
                         rAF.seek((long)chunkIndex * chunkSize);
                         rAF.write(buffer, 0, readBytes);
                     }
@@ -191,6 +211,7 @@ public class FileClient {
                 dOS.writeInt(chunkIndex);
                 dOS.flush();
 
+                // if all downloıded
                 if (msDownloader.allChunksDownloaded()) {
                     break;
                 }
@@ -203,6 +224,8 @@ public class FileClient {
         }
     }
 
+    // UDP broadcast to find peers
+    // send PING receive PONG -> no PONG no peer (added this to avoid other UDP packets, there was problems at lab)
     private static List<String> startPeerDiscovery(String broadcastAddress, int targetPort) {
         List<String> peerIPs = new ArrayList<>();
         try (DatagramSocket socket = new DatagramSocket()) {
@@ -211,6 +234,7 @@ public class FileClient {
             String broadcastMsg = "PING from peer!";
             byte[] sendData = broadcastMsg.getBytes();
 
+            // broadcast limitation for not overwhelming network (10 packets)
             for (int i = 0; i < 10; i++) {
                 DatagramPacket packet = new DatagramPacket(sendData, sendData.length, broadcastInet, targetPort);
                 socket.send(packet);
@@ -218,18 +242,20 @@ public class FileClient {
                 Thread.sleep(500);
             }
 
+            // wait 5s for response
             socket.setSoTimeout(5000);
             byte[] buffer = new byte[1024];
 
+            // receive PONG
             while (true) {
                 try {
                     DatagramPacket responsePacket = new DatagramPacket(buffer, buffer.length);
                     socket.receive(responsePacket);
                     String msg = new String(responsePacket.getData(), 0, responsePacket.getLength());
-                    if (msg.startsWith("PONG")) {
+                    if (msg.startsWith("PONG")) { // received from server
                         String peerIP = responsePacket.getAddress().getHostAddress();
                         System.out.println("Discovered peer: " + peerIP);
-                        if (!peerIPs.contains(peerIP)) {
+                        if (!peerIPs.contains(peerIP)) { // dont add if exist
                             peerIPs.add(peerIP);
                         }
                     }
@@ -249,7 +275,7 @@ class MultiSourceDownloader {
     private final RandomAccessFile rAF;
     private final boolean[] chunkDownloaded;
     private final int totalChunks;
-    private final java.util.concurrent.atomic.AtomicInteger downloadedCount = new java.util.concurrent.atomic.AtomicInteger(0);
+    private final AtomicInteger downloadedCount = new AtomicInteger(0); // manage different peers
 
     public MultiSourceDownloader(String fileName, RandomAccessFile rAF, int totalChunks) {
         this.fileName = fileName;
@@ -277,7 +303,7 @@ class MultiSourceDownloader {
     public synchronized void setChunkDownloaded(int index) {
         if (!chunkDownloaded[index]) {
             chunkDownloaded[index] = true;
-            downloadedCount.incrementAndGet();
+            downloadedCount.incrementAndGet(); // set upon all
         }
     }
 
