@@ -6,7 +6,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-public class BasicP2PGUI extends JFrame {
+public class GUI extends JFrame {
 
     private Thread serverThread;
     private JList<String> foundFilesList;
@@ -15,8 +15,8 @@ public class BasicP2PGUI extends JFrame {
     private DefaultListModel<String> excludedMasksModel = new DefaultListModel<>();
     private List<String> allFoundFiles = new ArrayList<>(); // local listing for search
 
-    public BasicP2PGUI() {
-        super("Basic P2P GUI");
+    public GUI() {
+        super("P2P");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setSize(700, 500);
         setLocationRelativeTo(null);
@@ -311,7 +311,7 @@ public class BasicP2PGUI extends JFrame {
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
-            BasicP2PGUI gui = new BasicP2PGUI();
+            GUI gui = new GUI();
             gui.setVisible(true);
         });
     }
